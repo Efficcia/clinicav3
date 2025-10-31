@@ -86,6 +86,12 @@ export default function Dashboard() {
           return;
         }
 
+        console.log('[DASHBOARD] 💾 Salvando dados no store:', {
+          patients: data.patients.length,
+          appointments: data.appointments.length,
+          financialEntries: data.financialEntries.length,
+        });
+
         setPatients(data.patients);
         setAppointments(data.appointments);
         setFinancialEntries(data.financialEntries);
@@ -97,6 +103,7 @@ export default function Dashboard() {
           setCompany(data.company);
         }
 
+        console.log('[DASHBOARD] ✅ Dados salvos, marcando como inicializado');
         setInitialized(true);
       } catch (error) {
         console.error('Erro ao carregar dados iniciais do Supabase:', error);
@@ -136,6 +143,12 @@ export default function Dashboard() {
 
   const patientsWithStatus = getPatientsWithStatus();
   const metrics = getMetrics();
+
+  console.log('[DASHBOARD] 📈 Métricas calculadas:', {
+    totalPatients: patients.length,
+    totalAppointments: metrics.totalAppointments,
+    patientsWithStatus: patientsWithStatus.length,
+  });
 
   const todayPatients = patientsWithStatus.filter(p =>
     ['scheduled', 'waiting', 'confirmed', 'in-progress', 'completed'].includes(p.status)
