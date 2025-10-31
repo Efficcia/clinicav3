@@ -35,7 +35,7 @@ export function useSupabaseAuth() {
           console.log('Auth state changed:', event);
 
           if (session?.user) {
-            await loadUserProfile(session.user.id);
+            await loadUserProfile(session.user.id, session.user.email, session.user.user_metadata);
           } else {
             setUser(null);
             setIsAuthenticated(false);
@@ -73,7 +73,7 @@ export function useSupabaseAuth() {
       }
 
       if (session?.user) {
-        await loadUserProfile(session.user.id);
+        await loadUserProfile(session.user.id, session.user.email, session.user.user_metadata);
       } else {
         setUser(null);
         setIsAuthenticated(false);
@@ -87,24 +87,18 @@ export function useSupabaseAuth() {
     }
   };
 
-  const loadUserProfile = async (userId: string) => {
+  const loadUserProfile = async (userId: string, email?: string, metadata?: any) => {
     try {
-      if (!supabaseClient) return;
-
-      // Try to get data from auth user first (faster and always works)
-      const { data: { user: authUser } } = await supabaseClient.auth.getUser();
-      if (authUser) {
-        const userData: User = {
-          id: authUser.id,
-          name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'Usuário',
-          email: authUser.email || '',
-          role: (authUser.user_metadata?.role as User['role']) || 'admin' // Default to admin
-        };
-        setUser(userData);
-        setIsAuthenticated(true);
-        console.log('[AUTH] User authenticated:', userData.email);
-        return;
-      }
+      // Use dados já disponíveis da sessão ao invés de fazer nova chamada
+      const userData: User = {
+        id: userId,
+        name: metadata?.name || email?.split('@')[0] || 'Usuário',
+        email: email || '',
+        role: (metadata?.role as User['role']) || 'admin'
+      };
+      setUser(userData);
+      setIsAuthenticated(true);
+      console.log('[AUTH] User authenticated:', userData.email);
     } catch (error) {
       console.error('Error loading user profile:', error);
       // FALLBACK: Set authenticated anyway to not block user
@@ -144,7 +138,7 @@ export function useSupabaseAuth() {
       }
 
       if (data.user) {
-        await loadUserProfile(data.user.id);
+        await loadUserProfile(data.user.id, data.user.email, data.user.user_metadata);
         return { success: true, user: user || undefined };
       }
 
