@@ -48,7 +48,7 @@ async function fetchFromSupabase<T extends Entity>(table: string): Promise<T[]> 
       case 'financial_entries':
         return { column: 'date', ascending: false };
       case 'waitlist':
-        return { column: 'created_at', ascending: false };
+        return { column: 'createdAt', ascending: false }; // Corrigido: camelCase
       case 'patients':
       case 'professionals':
       case 'team_members':
@@ -56,7 +56,7 @@ async function fetchFromSupabase<T extends Entity>(table: string): Promise<T[]> 
       case 'companies':
         return { column: 'name', ascending: true };
       default:
-        return { column: 'created_at', ascending: false };
+        return { column: 'createdAt', ascending: false }; // Corrigido: camelCase
     }
   };
 
