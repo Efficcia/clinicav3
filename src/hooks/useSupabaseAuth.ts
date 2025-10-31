@@ -61,64 +61,27 @@ export function useSupabaseAuth() {
       console.log('[AUTH] Verificando sessão...');
       const startTime = Date.now();
 
-      // Timeout de 3 segundos para detectar sessão travada
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Sessão travada')), 3000);
-      });
+      const { data: { session }, error } = await supabaseClient.auth.getSession();
 
-      const sessionPromise = supabaseClient.auth.getSession();
+      const duration = Date.now() - startTime;
+      console.log(`[AUTH] Sessão verificada em ${duration}ms`);
 
-      try {
-        const { data: { session }, error } = await Promise.race([
-          sessionPromise,
-          timeoutPromise
-        ]);
+      if (error) {
+        console.error('[AUTH] Erro ao verificar sessão:', error);
+        setIsLoading(false);
+        return;
+      }
 
-        const duration = Date.now() - startTime;
-        console.log(`[AUTH] Sessão verificada em ${duration}ms`);
-
-        if (error) {
-          console.error('[AUTH] Erro ao verificar sessão:', error);
-          setIsLoading(false);
-          return;
-        }
-
-        if (session?.user) {
-          await loadUserProfile(session.user.id);
-        } else {
-          setUser(null);
-          setIsAuthenticated(false);
-        }
-      } catch (timeoutError) {
-        console.error('[AUTH] ❌ Sessão travada detectada! Limpando e redirecionando...');
-
-        // Limpa localStorage IMEDIATAMENTE (sem esperar signOut que também trava)
-        if (typeof window !== 'undefined') {
-          const keysToRemove = [];
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && key.includes('supabase')) {
-              keysToRemove.push(key);
-            }
-          }
-          keysToRemove.forEach(key => localStorage.removeItem(key));
-          console.log('[AUTH] 🧹 Cache limpo:', keysToRemove.length, 'items removidos');
-        }
-
+      if (session?.user) {
+        await loadUserProfile(session.user.id);
+      } else {
         setUser(null);
         setIsAuthenticated(false);
-        setIsLoading(false);
-
-        // Redireciona IMEDIATAMENTE usando window.location (mais agressivo)
-        console.log('[AUTH] 🔄 Redirecionando AGORA para login...');
-        if (typeof window !== 'undefined') {
-          window.location.href = '/login';
-        }
-
-        return;
       }
     } catch (error) {
       console.error('[AUTH] Erro crítico:', error);
+      setUser(null);
+      setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
     }
