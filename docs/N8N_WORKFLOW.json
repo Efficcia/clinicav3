@@ -1,0 +1,408 @@
+{
+  "name": "ClinicTech - Ensalamento Automático",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "clinictech/appointment-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook - Novo Appointment",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "clinictech-appointment",
+      "notes": "Recebe webhooks do sistema de agenda quando appointment é criado/atualizado/cancelado"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Mapeia payload do webhook para formato esperado\nconst appointment = $input.item.json;\n\nreturn {\n  json: {\n    appointmentId: appointment.id,\n    professionalId: appointment.doctorId || appointment.doctor_id,\n    professionalName: appointment.doctorName || appointment.doctor_name,\n    patientName: appointment.patientName || appointment.patient_name,\n    startsAt: `${appointment.date}T${appointment.time}:00-03:00`,\n    endsAt: new Date(\n      new Date(`${appointment.date}T${appointment.time}:00-03:00`).getTime() + \n      (appointment.duration || 60) * 60000\n    ).toISOString(),\n    status: appointment.status,\n    procedure: appointment.type || appointment.procedure,\n    action: appointment._action || 'created' // created|updated|cancelled\n  }\n};"
+      },
+      "name": "Mapear Dados",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.status}}",
+              "operation": "equals",
+              "value2": "confirmed"
+            }
+          ]
+        }
+      },
+      "name": "Status é Confirmed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/rpc/allocate_room",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_SERVICE_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.SUPABASE_SERVICE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "_appointment_id",
+              "value": "={{$json.appointmentId}}"
+            },
+            {
+              "name": "_professional_id",
+              "value": "={{$json.professionalId}}"
+            },
+            {
+              "name": "_starts",
+              "value": "={{$json.startsAt}}"
+            },
+            {
+              "name": "_ends",
+              "value": "={{$json.endsAt}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Supabase RPC - Allocate Room",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 200],
+      "notes": "Chama função RPC para alocar sala automaticamente",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.roomId}}",
+              "operation": "isEmpty"
+            }
+          ]
+        }
+      },
+      "name": "Alocação Falhou?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/rpc/suggest_alternative_slots",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_SERVICE_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.SUPABASE_SERVICE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "_professional_id",
+              "value": "={{$json.professionalId}}"
+            },
+            {
+              "name": "_desired_starts",
+              "value": "={{$json.startsAt}}"
+            },
+            {
+              "name": "_desired_ends",
+              "value": "={{$json.endsAt}}"
+            },
+            {
+              "name": "_max_suggestions",
+              "value": "3"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Buscar Alternativas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1250, 100],
+      "notes": "Busca horários e salas alternativos"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Formata mensagem WhatsApp para conflito de sala\nconst appointment = $node[\"Mapear Dados\"].json;\nconst alternatives = $input.item.json || [];\n\nlet message = `⚠️ *ENSALAMENTO PENDENTE*\\n\\n`;\nmessage += `*Profissional:* ${appointment.professionalName}\\n`;\nmessage += `*Paciente:* ${appointment.patientName}\\n`;\nmessage += `*Horário Solicitado:* ${new Date(appointment.startsAt).toLocaleString('pt-BR', { \n  day: '2-digit', \n  month: '2-digit', \n  hour: '2-digit', \n  minute: '2-digit' \n})}\\n\\n`;\n\nif (alternatives.length > 0) {\n  message += `🔄 *Sugestões de Horários/Salas Livres:*\\n`;\n  alternatives.forEach((alt, i) => {\n    const time = new Date(alt.suggested_starts).toLocaleString('pt-BR', {\n      hour: '2-digit',\n      minute: '2-digit'\n    });\n    message += `\\n${i+1}. ${alt.room_name} às ${time} (${alt.offset_minutes > 0 ? '+' : ''}${alt.offset_minutes}min)`;\n  });\n  message += `\\n\\n📋 *Ação Necessária:*\\n`;\n  message += `Por favor, ajuste o horário ou mova algum agendamento conflitante.`;\n} else {\n  message += `❌ Nenhuma sala disponível no dia.\\n`;\n  message += `📋 Necessário reagendar ou liberar alguma sala.`;\n}\n\nreturn {\n  json: {\n    phone: $env.WHATSAPP_GROUP_ID, // ID do grupo WhatsApp\n    message: message\n  }\n};"
+      },
+      "name": "Formatar Mensagem WhatsApp",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1450, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.EVOLUTION_API_URL}}/message/sendText/{{$env.EVOLUTION_INSTANCE}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.EVOLUTION_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "text",
+              "value": "={{$json.message}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Enviar WhatsApp - Alerta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1650, 100],
+      "notes": "Envia notificação via Evolution API"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Busca nome da sala alocada\nconst roomId = $input.item.json;\nconst appointment = $node[\"Mapear Dados\"].json;\n\nreturn {\n  json: {\n    success: true,\n    appointmentId: appointment.appointmentId,\n    roomId: roomId,\n    professionalName: appointment.professionalName,\n    patientName: appointment.patientName,\n    startsAt: appointment.startsAt\n  }\n};"
+      },
+      "name": "Sucesso - Preparar Resposta",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/rpc/deallocate_room",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_SERVICE_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.SUPABASE_SERVICE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "_appointment_id",
+              "value": "={{$json.appointmentId}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Supabase RPC - Deallocate Room",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 400],
+      "notes": "Remove alocação quando appointment é cancelado"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}"
+      },
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Novo Appointment": {
+      "main": [
+        [
+          {
+            "node": "Mapear Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mapear Dados": {
+      "main": [
+        [
+          {
+            "node": "Status é Confirmed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status é Confirmed?": {
+      "main": [
+        [
+          {
+            "node": "Supabase RPC - Allocate Room",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Supabase RPC - Deallocate Room",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase RPC - Allocate Room": {
+      "main": [
+        [
+          {
+            "node": "Alocação Falhou?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alocação Falhou?": {
+      "main": [
+        [
+          {
+            "node": "Buscar Alternativas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sucesso - Preparar Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Alternativas": {
+      "main": [
+        [
+          {
+            "node": "Formatar Mensagem WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Mensagem WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp - Alerta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sucesso - Preparar Resposta": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase RPC - Deallocate Room": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp - Alerta": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-10-27T00:00:00.000Z",
+  "versionId": "1"
+}
