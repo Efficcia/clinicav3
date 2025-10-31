@@ -517,12 +517,7 @@ export async function fetchInitialData(): Promise<BootstrapData> {
   console.log('[FETCH] 📡 Buscando dados do Supabase...');
 
   try {
-    // Timeout de 10 segundos (tempo suficiente para Supabase responder)
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Timeout ao buscar dados')), 10000);
-    });
-
-    const dataPromise = Promise.all([
+    const [patients, appointments, financialEntries, waitlist, professionals, teamMembers, company] = await Promise.all([
       supabaseClient.from('patients').select('*'),
       supabaseClient.from('appointments').select('*'),
       supabaseClient.from('financial_entries').select('*'),
@@ -530,11 +525,6 @@ export async function fetchInitialData(): Promise<BootstrapData> {
       supabaseClient.from('professionals').select('*'),
       supabaseClient.from('team_members').select('*'),
       supabaseClient.from('companies').select('*').limit(1).maybeSingle(),
-    ]);
-
-    const [patients, appointments, financialEntries, waitlist, professionals, teamMembers, company] = await Promise.race([
-      dataPromise,
-      timeoutPromise
     ]);
 
     const duration = performance.now() - startTime;
