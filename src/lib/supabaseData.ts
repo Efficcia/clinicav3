@@ -537,7 +537,9 @@ export async function fetchInitialData(): Promise<BootstrapData> {
       throw new Error(firstError.message);
     }
 
-    const result = {
+    console.log(`[FETCH] ✅ Concluído! Total: ${duration.toFixed(0)}ms`);
+
+    return {
       patients: patients.data ?? [],
       appointments: appointments.data ?? [],
       financialEntries: financialEntries.data ?? [],
@@ -546,20 +548,6 @@ export async function fetchInitialData(): Promise<BootstrapData> {
       teamMembers: teamMembers.data ?? [],
       company: company.data ?? null,
     };
-
-    console.log(`[FETCH] 📊 Dados retornados:`, {
-      patients: result.patients.length,
-      appointments: result.appointments.length,
-      financialEntries: result.financialEntries.length,
-      waitlist: result.waitlist.length,
-      professionals: result.professionals.length,
-      teamMembers: result.teamMembers.length,
-      company: result.company ? 'OK' : 'NULL',
-    });
-
-    console.log(`[FETCH] ✅ Concluído! Total: ${duration.toFixed(0)}ms`);
-
-    return result;
   } catch (error) {
     const duration = performance.now() - startTime;
     console.warn(`[FETCH] ⚠️ Timeout ou erro após ${duration.toFixed(0)}ms - retornando dados vazios`);
