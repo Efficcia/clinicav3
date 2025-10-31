@@ -77,25 +77,14 @@ export default function Dashboard() {
     }
 
     let isMounted = true;
-    let timeoutId: NodeJS.Timeout;
 
     const loadInitialData = async () => {
-      // Timeout de 5 segundos - força inicialização mesmo que não carregue
-      timeoutId = setTimeout(() => {
-        if (isMounted && !isInitialized) {
-          console.warn('Timeout ao carregar dados - liberando página');
-          setInitialized(true);
-        }
-      }, 5000);
-
       try {
         const data = await fetchInitialData();
 
         if (!isMounted) {
           return;
         }
-
-        clearTimeout(timeoutId);
 
         setPatients(data.patients);
         setAppointments(data.appointments);
@@ -111,7 +100,6 @@ export default function Dashboard() {
         setInitialized(true);
       } catch (error) {
         console.error('Erro ao carregar dados iniciais do Supabase:', error);
-        clearTimeout(timeoutId);
         // Mesmo com erro, marcar como inicializado para não travar a página
         if (isMounted) {
           setInitialized(true);
@@ -123,7 +111,6 @@ export default function Dashboard() {
 
     return () => {
       isMounted = false;
-      clearTimeout(timeoutId);
     };
   }, [
     supabaseActive,
