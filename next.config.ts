@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Removed 'output: export' for Vercel deployment (enables SSR/ISR)
-  // This fixes Supabase session timeout issues on page refresh
+  output: 'export', // Static export - client-side only (fast like localhost)
   images: {
     unoptimized: true,
   },
